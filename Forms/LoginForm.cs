@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Windows.Forms;
+using DailyFinanceApp.Forms;
 
 namespace DailyFinanceApp
 {
@@ -8,6 +9,14 @@ namespace DailyFinanceApp
         public LoginForm()
         {
             InitializeComponent();
+
+            // Sambungkan event link Daftar lewat kode
+            // (-= dulu supaya tidak terpanggil dua kali kalau di Designer sudah tersambung)
+            lnkRegister.LinkClicked -= lnkRegister_LinkClicked;
+            lnkRegister.LinkClicked += lnkRegister_LinkClicked;
+
+            // Tekan Enter = klik tombol Login
+            this.AcceptButton = btnLogin;
         }
 
         private void btnLogin_Click(object sender, EventArgs e)
@@ -20,8 +29,23 @@ namespace DailyFinanceApp
                 return;
             }
 
-            // TODO: ganti dengan AuthService.Login(...) dari backend
-            MessageBox.Show("Login berhasil (dummy).");
+            // Sementara menggunakan data login dummy
+            Session.UserId = 1;
+            Session.Name = txtUsername.Text;
+            Session.Username = txtUsername.Text;
+            Session.Role = txtUsername.Text.ToLower() == "admin" ? "Admin" : "User";
+
+            this.Hide();
+            new MainForm().ShowDialog();
+
+            txtPassword.Clear();
+            this.Show();
+        }
+
+        // Membuka halaman pendaftaran
+        private void lnkRegister_LinkClicked(object sender, LinkLabelLinkClickedEventArgs e)
+        {
+            new RegisterForm().ShowDialog();
         }
     }
 }

@@ -13,7 +13,7 @@ namespace DailyFinanceApp
         {
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
-            Application.Run(new MainForm());   // sementara untuk tes
+            Application.Run(new LoginForm());
         }
     }
 }

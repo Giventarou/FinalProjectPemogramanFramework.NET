@@ -39,6 +39,8 @@
             this.btnCategory = new System.Windows.Forms.Button();
             this.btnWallet = new System.Windows.Forms.Button();
             this.btnDashboard = new System.Windows.Forms.Button();
+            this.btnLogout = new System.Windows.Forms.Button();
+            this.lblUser = new System.Windows.Forms.Label();
             this.pnlSidebar.SuspendLayout();
             this.SuspendLayout();
             // 
@@ -53,6 +55,7 @@
             // pnlSidebar
             // 
             this.pnlSidebar.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(30)))), ((int)(((byte)(58)))), ((int)(((byte)(95)))));
+            this.pnlSidebar.Controls.Add(this.lblUser);
             this.pnlSidebar.Controls.Add(this.btnSettings);
             this.pnlSidebar.Controls.Add(this.btnLog);
             this.pnlSidebar.Controls.Add(this.btnReport);
@@ -62,6 +65,7 @@
             this.pnlSidebar.Controls.Add(this.btnCategory);
             this.pnlSidebar.Controls.Add(this.btnWallet);
             this.pnlSidebar.Controls.Add(this.btnDashboard);
+            this.pnlSidebar.Controls.Add(this.btnLogout);
             this.pnlSidebar.Dock = System.Windows.Forms.DockStyle.Left;
             this.pnlSidebar.Location = new System.Drawing.Point(0, 0);
             this.pnlSidebar.Name = "pnlSidebar";
@@ -214,6 +218,35 @@
             this.btnDashboard.UseVisualStyleBackColor = true;
             this.btnDashboard.Click += new System.EventHandler(this.btnDashboard_Click);
             // 
+            // btnLogout
+            // 
+            this.btnLogout.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(192)))), ((int)(((byte)(57)))), ((int)(((byte)(43)))));
+            this.btnLogout.Dock = System.Windows.Forms.DockStyle.Bottom;
+            this.btnLogout.FlatAppearance.BorderSize = 0;
+            this.btnLogout.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
+            this.btnLogout.ForeColor = System.Drawing.Color.White;
+            this.btnLogout.Location = new System.Drawing.Point(0, 566);
+            this.btnLogout.Name = "btnLogout";
+            this.btnLogout.Padding = new System.Windows.Forms.Padding(15, 0, 0, 0);
+            this.btnLogout.Size = new System.Drawing.Size(220, 45);
+            this.btnLogout.TabIndex = 9;
+            this.btnLogout.TabStop = false;
+            this.btnLogout.Text = "Logout";
+            this.btnLogout.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
+            this.btnLogout.UseVisualStyleBackColor = false;
+            this.btnLogout.Click += new System.EventHandler(this.btnLogout_Click);
+            // 
+            // lblUser
+            // 
+            this.lblUser.Dock = System.Windows.Forms.DockStyle.Bottom;
+            this.lblUser.ForeColor = System.Drawing.Color.White;
+            this.lblUser.Location = new System.Drawing.Point(0, 531);
+            this.lblUser.Name = "lblUser";
+            this.lblUser.Size = new System.Drawing.Size(220, 35);
+            this.lblUser.TabIndex = 10;
+            this.lblUser.Text = "User";
+            this.lblUser.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
+            // 
             // MainForm
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(7F, 17F);
@@ -244,5 +277,7 @@
         private System.Windows.Forms.Button btnTransaction;
         private System.Windows.Forms.Button btnCategory;
         private System.Windows.Forms.Button btnWallet;
+        private System.Windows.Forms.Button btnLogout;
+        private System.Windows.Forms.Label lblUser;
     }
 }
