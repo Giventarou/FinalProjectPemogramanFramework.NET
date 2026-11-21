@@ -65,6 +65,12 @@
     <Compile Include="MainForm.Designer.cs">
       <DependentUpon>MainForm.cs</DependentUpon>
     </Compile>
+    <Compile Include="Pages\ucCategory.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Include="Pages\ucCategory.Designer.cs">
+      <DependentUpon>ucCategory.cs</DependentUpon>
+    </Compile>
     <Compile Include="Pages\ucDashboard.cs">
       <SubType>UserControl</SubType>
     </Compile>
@@ -87,6 +93,9 @@
     </EmbeddedResource>
     <EmbeddedResource Include="MainForm.resx">
       <DependentUpon>MainForm.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Pages\ucCategory.resx">
+      <DependentUpon>ucCategory.cs</DependentUpon>
     </EmbeddedResource>
     <EmbeddedResource Include="Pages\ucDashboard.resx">
       <DependentUpon>ucDashboard.cs</DependentUpon>

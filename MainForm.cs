@@ -10,6 +10,10 @@ namespace DailyFinanceApp
         {
             InitializeComponent();
             lblUser.Text = "  " + Session.Name + " (" + Session.Role + ")";
+
+            // Menu Kategori disambungkan lewat kode
+            btnCategory.Click += (s, e) => LoadPage(new ucCategory());
+
             LoadPage(new ucDashboard());
         }
 
