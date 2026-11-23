@@ -14,6 +14,7 @@ namespace DailyFinanceApp
             // Menu disambungkan lewat kode
             btnCategory.Click += (s, e) => LoadPage(new ucCategory());
             btnTransaction.Click += (s, e) => LoadPage(new ucTransaction());
+            btnBudget.Click += (s, e) => LoadPage(new ucBudget());
 
             LoadPage(new ucDashboard());
         }
