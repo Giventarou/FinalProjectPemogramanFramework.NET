@@ -1,22 +1,11 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using MySql.Data.MySqlClient;
+using System;
 using System.Windows.Forms;
 
 namespace DailyFinanceApp.Pages
 {
     public partial class ucCategory : UserControl
     {
-        // Model sederhana untuk data dummy.
-        // Nanti diganti dengan model/service dari backend.
-        private class CategoryItem
-        {
-            public int Id { get; set; }
-            public string Name { get; set; }
-            public string Type { get; set; }
-        }
-
-        private readonly List<CategoryItem> _categories = new List<CategoryItem>();
-        private int _nextId = 1;
         private int _selectedId = 0;
 
         public ucCategory()
@@ -24,16 +13,14 @@ namespace DailyFinanceApp.Pages
             InitializeComponent();
 
             SetupGrid();
-            LoadDummyData();
-            RefreshGrid();
+            cmbType.SelectedIndex = 0;
+            LoadCategories();
 
             btnAdd.Click += btnAdd_Click;
             btnUpdate.Click += btnUpdate_Click;
             btnDelete.Click += btnDelete_Click;
             btnClear.Click += btnClear_Click;
             dgvCategory.SelectionChanged += dgvCategory_SelectionChanged;
-
-            cmbType.SelectedIndex = 0;
         }
 
         // ---------- Setup ----------
@@ -47,29 +34,45 @@ namespace DailyFinanceApp.Pages
             dgvCategory.Columns.Add("Type", "Tipe");
         }
 
-        private void LoadDummyData()
-        {
-            AddToList("Makanan", "Pengeluaran");
-            AddToList("Transportasi", "Pengeluaran");
-            AddToList("Pendidikan", "Pengeluaran");
-            AddToList("Gaji", "Pemasukan");
-            AddToList("Uang Saku", "Pemasukan");
-        }
-
-        private void AddToList(string name, string type)
-        {
-            _categories.Add(new CategoryItem { Id = _nextId++, Name = name, Type = type });
-        }
-
         // ---------- Tampilan ----------
 
-        private void RefreshGrid()
+        // Ambil semua kategori milik user yang sedang login dari database
+        private void LoadCategories()
         {
             dgvCategory.Rows.Clear();
-            foreach (var c in _categories)
+
+            try
             {
-                dgvCategory.Rows.Add(c.Id, c.Name, c.Type);
+                using (var conn = Db.GetConnection())
+                {
+                    conn.Open();
+
+                    using (var cmd = new MySqlCommand(
+                        "SELECT id, name, type FROM categories " +
+                        "WHERE user_id = @uid ORDER BY type, name", conn))
+                    {
+                        cmd.Parameters.AddWithValue("@uid", Session.UserId);
+
+                        using (var reader = cmd.ExecuteReader())
+                        {
+                            while (reader.Read())
+                            {
+                                dgvCategory.Rows.Add(
+                                    reader["id"],
+                                    reader["name"].ToString(),
+                                    reader["type"].ToString());
+                            }
+                        }
+                    }
+                }
             }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Gagal memuat kategori: " + ex.Message, "Error",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+
+            _selectedId = 0;
             dgvCategory.ClearSelection();
         }
 
@@ -104,20 +107,6 @@ namespace DailyFinanceApp.Pages
                 return false;
             }
 
-            // Cegah nama kembar pada tipe yang sama
-            string name = txtCategoryName.Text.Trim();
-            bool duplicate = _categories.Exists(c =>
-                c.Id != _selectedId &&
-                c.Type == cmbType.Text &&
-                string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase));
-
-            if (duplicate)
-            {
-                Warn("Kategori dengan nama dan tipe yang sama sudah ada.");
-                txtCategoryName.Focus();
-                return false;
-            }
-
             return true;
         }
 
@@ -127,22 +116,45 @@ namespace DailyFinanceApp.Pages
         {
             if (dgvCategory.SelectedRows.Count == 0) return;
 
-            int id = Convert.ToInt32(dgvCategory.SelectedRows[0].Cells["Id"].Value);
-            var c = _categories.Find(x => x.Id == id);
-            if (c == null) return;
-
-            _selectedId = c.Id;
-            txtCategoryName.Text = c.Name;
-            cmbType.SelectedItem = c.Type;
+            var row = dgvCategory.SelectedRows[0];
+            _selectedId = Convert.ToInt32(row.Cells["Id"].Value);
+            txtCategoryName.Text = row.Cells["Name"].Value.ToString();
+            cmbType.SelectedItem = row.Cells["Type"].Value.ToString();
         }
 
         private void btnAdd_Click(object sender, EventArgs e)
         {
             if (!ValidateInput()) return;
 
-            // TODO: ganti dengan CategoryService.Add(...) dari backend
-            AddToList(txtCategoryName.Text.Trim(), cmbType.Text);
-            RefreshGrid();
+            try
+            {
+                using (var conn = Db.GetConnection())
+                {
+                    conn.Open();
+
+                    using (var cmd = new MySqlCommand(
+                        "INSERT INTO categories (user_id, name, type) " +
+                        "VALUES (@uid, @name, @type)", conn))
+                    {
+                        cmd.Parameters.AddWithValue("@uid", Session.UserId);
+                        cmd.Parameters.AddWithValue("@name", txtCategoryName.Text.Trim());
+                        cmd.Parameters.AddWithValue("@type", cmbType.Text);
+                        cmd.ExecuteNonQuery();
+                    }
+                }
+            }
+            catch (MySqlException ex)
+            {
+                // 1062 = data kembar (nama dan tipe yang sama sudah ada)
+                if (ex.Number == 1062)
+                    Warn("Kategori dengan nama dan tipe yang sama sudah ada.");
+                else
+                    MessageBox.Show("Gagal menambah kategori: " + ex.Message, "Error",
+                        MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            LoadCategories();
             ClearForm();
 
             MessageBox.Show("Kategori berhasil ditambahkan.", "Sukses",
@@ -159,14 +171,35 @@ namespace DailyFinanceApp.Pages
 
             if (!ValidateInput()) return;
 
-            // TODO: ganti dengan CategoryService.Update(...) dari backend
-            var c = _categories.Find(x => x.Id == _selectedId);
-            if (c == null) return;
+            try
+            {
+                using (var conn = Db.GetConnection())
+                {
+                    conn.Open();
 
-            c.Name = txtCategoryName.Text.Trim();
-            c.Type = cmbType.Text;
+                    using (var cmd = new MySqlCommand(
+                        "UPDATE categories SET name = @name, type = @type " +
+                        "WHERE id = @id AND user_id = @uid", conn))
+                    {
+                        cmd.Parameters.AddWithValue("@name", txtCategoryName.Text.Trim());
+                        cmd.Parameters.AddWithValue("@type", cmbType.Text);
+                        cmd.Parameters.AddWithValue("@id", _selectedId);
+                        cmd.Parameters.AddWithValue("@uid", Session.UserId);
+                        cmd.ExecuteNonQuery();
+                    }
+                }
+            }
+            catch (MySqlException ex)
+            {
+                if (ex.Number == 1062)
+                    Warn("Kategori dengan nama dan tipe yang sama sudah ada.");
+                else
+                    MessageBox.Show("Gagal mengubah kategori: " + ex.Message, "Error",
+                        MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
 
-            RefreshGrid();
+            LoadCategories();
             ClearForm();
 
             MessageBox.Show("Kategori berhasil diubah.", "Sukses",
@@ -185,10 +218,33 @@ namespace DailyFinanceApp.Pages
                 MessageBoxButtons.YesNo, MessageBoxIcon.Question);
             if (hasil != DialogResult.Yes) return;
 
-            // TODO: ganti dengan CategoryService.Delete(...) dari backend
-            // Catatan: backend perlu menolak hapus kalau kategori masih dipakai transaksi.
-            _categories.RemoveAll(x => x.Id == _selectedId);
-            RefreshGrid();
+            try
+            {
+                using (var conn = Db.GetConnection())
+                {
+                    conn.Open();
+
+                    using (var cmd = new MySqlCommand(
+                        "DELETE FROM categories WHERE id = @id AND user_id = @uid", conn))
+                    {
+                        cmd.Parameters.AddWithValue("@id", _selectedId);
+                        cmd.Parameters.AddWithValue("@uid", Session.UserId);
+                        cmd.ExecuteNonQuery();
+                    }
+                }
+            }
+            catch (MySqlException ex)
+            {
+                // 1451 = kategori masih dipakai oleh transaksi
+                if (ex.Number == 1451)
+                    Warn("Kategori ini masih dipakai transaksi, jadi tidak bisa dihapus.");
+                else
+                    MessageBox.Show("Gagal menghapus kategori: " + ex.Message, "Error",
+                        MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            LoadCategories();
             ClearForm();
         }
 
