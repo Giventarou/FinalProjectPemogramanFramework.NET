@@ -1,4 +1,4 @@
-﻿
+﻿using MySql.Data.MySqlClient;
 using System;
 using System.Windows.Forms;
 
@@ -34,8 +34,43 @@ namespace DailyFinanceApp.Forms
                 return;
             }
 
-            MessageBox.Show("Pendaftaran berhasil! Silakan login.");
-            this.Close();
+            try
+            {
+                using (var conn = Db.GetConnection())
+                {
+                    conn.Open();
+
+                    // Cek dulu apakah username sudah dipakai
+                    using (var cek = new MySqlCommand(
+                        "SELECT COUNT(*) FROM users WHERE username = @username", conn))
+                    {
+                        cek.Parameters.AddWithValue("@username", txtUsername.Text.Trim());
+                        if (Convert.ToInt32(cek.ExecuteScalar()) > 0)
+                        {
+                            MessageBox.Show("Username sudah dipakai, pilih yang lain.");
+                            return;
+                        }
+                    }
+
+                    // Simpan akun baru (role otomatis "User")
+                    using (var cmd = new MySqlCommand(
+                        "INSERT INTO users (name, username, password_hash) " +
+                        "VALUES (@name, @username, @hash)", conn))
+                    {
+                        cmd.Parameters.AddWithValue("@name", txtName.Text.Trim());
+                        cmd.Parameters.AddWithValue("@username", txtUsername.Text.Trim());
+                        cmd.Parameters.AddWithValue("@hash", PasswordHelper.Hash(txtPassword.Text));
+                        cmd.ExecuteNonQuery();
+                    }
+                }
+
+                MessageBox.Show("Pendaftaran berhasil! Silakan login.");
+                this.Close();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Gagal mendaftar: " + ex.Message);
+            }
         }
 
         private void lnkBack_LinkClicked(object sender, LinkLabelLinkClickedEventArgs e)

@@ -111,6 +111,7 @@
       <DependentUpon>RegisterForm.cs</DependentUpon>
     </Compile>
     <Compile Include="Helpers\Db.cs" />
+    <Compile Include="Helpers\PasswordHelper.cs" />
     <Compile Include="Helpers\Session.cs" />
     <Compile Include="MainForm.cs">
       <SubType>Form</SubType>

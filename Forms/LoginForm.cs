@@ -1,6 +1,7 @@
-﻿using DailyFinanceApp.Forms;
+﻿using MySql.Data.MySqlClient;
 using System;
 using System.Windows.Forms;
+using DailyFinanceApp.Forms;
 
 namespace DailyFinanceApp
 {
@@ -9,7 +10,6 @@ namespace DailyFinanceApp
         public LoginForm()
         {
             InitializeComponent();
-           
 
             // Sambungkan event link Daftar lewat kode
             // (-= dulu supaya tidak terpanggil dua kali kalau di Designer sudah tersambung)
@@ -30,11 +30,60 @@ namespace DailyFinanceApp
                 return;
             }
 
-            // Sementara menggunakan data login dummy
-            Session.UserId = 1;
-            Session.Name = txtUsername.Text;
-            Session.Username = txtUsername.Text;
-            Session.Role = txtUsername.Text.ToLower() == "admin" ? "Admin" : "User";
+            int userId = 0;
+            string name = null;
+            string username = null;
+            string role = null;
+            bool berhasil = false;
+
+            try
+            {
+                using (var conn = Db.GetConnection())
+                {
+                    conn.Open();
+
+                    using (var cmd = new MySqlCommand(
+                        "SELECT id, name, username, password_hash, role " +
+                        "FROM users WHERE username = @username", conn))
+                    {
+                        cmd.Parameters.AddWithValue("@username", txtUsername.Text.Trim());
+
+                        using (var reader = cmd.ExecuteReader())
+                        {
+                            if (reader.Read())
+                            {
+                                string hash = reader["password_hash"].ToString();
+                                if (PasswordHelper.Verify(txtPassword.Text, hash))
+                                {
+                                    userId = Convert.ToInt32(reader["id"]);
+                                    name = reader["name"].ToString();
+                                    username = reader["username"].ToString();
+                                    role = reader["role"].ToString();
+                                    berhasil = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Tidak bisa terhubung ke database: " + ex.Message, "Error",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            if (!berhasil)
+            {
+                MessageBox.Show("Username atau password salah.", "Login Gagal",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            Session.UserId = userId;
+            Session.Name = name;
+            Session.Username = username;
+            Session.Role = role;
 
             this.Hide();
             new MainForm().ShowDialog();
