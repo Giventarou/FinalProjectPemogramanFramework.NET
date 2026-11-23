@@ -1,6 +1,6 @@
-﻿using System;
+﻿using DailyFinanceApp.Forms;
+using System;
 using System.Windows.Forms;
-using DailyFinanceApp.Forms;
 
 namespace DailyFinanceApp
 {
@@ -9,6 +9,7 @@ namespace DailyFinanceApp
         public LoginForm()
         {
             InitializeComponent();
+           
 
             // Sambungkan event link Daftar lewat kode
             // (-= dulu supaya tidak terpanggil dua kali kalau di Designer sudah tersambung)
