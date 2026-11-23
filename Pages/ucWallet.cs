@@ -1,5 +1,5 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using MySql.Data.MySqlClient;
+using System;
 using System.Globalization;
 using System.Windows.Forms;
 
@@ -7,20 +7,7 @@ namespace DailyFinanceApp.Pages
 {
     public partial class ucWallet : UserControl
     {
-        // Model sederhana untuk data dummy.
-        // Nanti diganti dengan model/service dari backend.
-        private class WalletItem
-        {
-            public int Id { get; set; }
-            public string Name { get; set; }
-            public string Type { get; set; }
-            public decimal InitialBalance { get; set; }
-            public decimal CurrentBalance { get; set; }
-        }
-
-        private readonly List<WalletItem> _wallets = new List<WalletItem>();
         private readonly CultureInfo _id = new CultureInfo("id-ID");
-        private int _nextId = 1;
         private int _selectedId = 0;
 
         public ucWallet()
@@ -28,8 +15,8 @@ namespace DailyFinanceApp.Pages
             InitializeComponent();
 
             SetupGrid();
-            LoadDummyData();
-            RefreshGrid();
+            cmbType.SelectedIndex = 0;
+            LoadWallets();
 
             // Sambungkan event lewat kode
             btnAdd.Click += btnAdd_Click;
@@ -37,8 +24,6 @@ namespace DailyFinanceApp.Pages
             btnDelete.Click += btnDelete_Click;
             btnClear.Click += btnClear_Click;
             dgvWallet.SelectionChanged += dgvWallet_SelectionChanged;
-
-            cmbType.SelectedIndex = 0;
         }
 
         // Dua method kosong ini masih dirujuk Designer, biarkan saja.
@@ -61,25 +46,6 @@ namespace DailyFinanceApp.Pages
             dgvWallet.Columns["Current"].DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight;
         }
 
-        private void LoadDummyData()
-        {
-            AddWalletToList("Dompet Harian", "Cash", 250000);
-            AddWalletToList("BCA", "Bank", 3500000);
-            AddWalletToList("GoPay", "E-Wallet", 150000);
-        }
-
-        private void AddWalletToList(string name, string type, decimal balance)
-        {
-            _wallets.Add(new WalletItem
-            {
-                Id = _nextId++,
-                Name = name,
-                Type = type,
-                InitialBalance = balance,
-                CurrentBalance = balance
-            });
-        }
-
         // ---------- Tampilan ----------
 
         private string Rp(decimal value)
@@ -87,13 +53,56 @@ namespace DailyFinanceApp.Pages
             return "Rp " + value.ToString("N0", _id);
         }
 
-        private void RefreshGrid()
+        // Ambil semua dompet milik user yang sedang login.
+        // Saldo saat ini = saldo awal + pemasukan - pengeluaran di dompet itu.
+        private void LoadWallets()
         {
             dgvWallet.Rows.Clear();
-            foreach (var w in _wallets)
+
+            try
             {
-                dgvWallet.Rows.Add(w.Id, w.Name, w.Type, Rp(w.InitialBalance), Rp(w.CurrentBalance));
+                using (var conn = Db.GetConnection())
+                {
+                    conn.Open();
+
+                    string sql =
+                        "SELECT w.id, w.name, w.type, w.initial_balance, " +
+                        "  w.initial_balance + COALESCE(SUM(CASE " +
+                        "    WHEN t.type = 'Pemasukan' THEN t.amount " +
+                        "    WHEN t.type = 'Pengeluaran' THEN -t.amount " +
+                        "  END), 0) AS current_balance " +
+                        "FROM wallets w " +
+                        "LEFT JOIN transactions t ON t.wallet_id = w.id " +
+                        "WHERE w.user_id = @uid " +
+                        "GROUP BY w.id, w.name, w.type, w.initial_balance " +
+                        "ORDER BY w.name";
+
+                    using (var cmd = new MySqlCommand(sql, conn))
+                    {
+                        cmd.Parameters.AddWithValue("@uid", Session.UserId);
+
+                        using (var reader = cmd.ExecuteReader())
+                        {
+                            while (reader.Read())
+                            {
+                                dgvWallet.Rows.Add(
+                                    reader["id"],
+                                    reader["name"].ToString(),
+                                    reader["type"].ToString(),
+                                    Rp(Convert.ToDecimal(reader["initial_balance"])),
+                                    Rp(Convert.ToDecimal(reader["current_balance"])));
+                            }
+                        }
+                    }
+                }
             }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Gagal memuat dompet: " + ex.Message, "Error",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+
+            _selectedId = 0;
             dgvWallet.ClearSelection();
         }
 
@@ -154,14 +163,40 @@ namespace DailyFinanceApp.Pages
         {
             if (dgvWallet.SelectedRows.Count == 0) return;
 
-            int id = Convert.ToInt32(dgvWallet.SelectedRows[0].Cells["Id"].Value);
-            var w = _wallets.Find(x => x.Id == id);
-            if (w == null) return;
+            var row = dgvWallet.SelectedRows[0];
+            _selectedId = Convert.ToInt32(row.Cells["Id"].Value);
+            txtWalletName.Text = row.Cells["Name"].Value.ToString();
+            cmbType.SelectedItem = row.Cells["Type"].Value.ToString();
 
-            _selectedId = w.Id;
-            txtWalletName.Text = w.Name;
-            cmbType.SelectedItem = w.Type;
-            txtInitialBalance.Text = w.InitialBalance.ToString("0", _id);
+            // Saldo awal di tabel tampil "Rp 250.000", jadi ambil lagi angka aslinya dari database
+            txtInitialBalance.Text = GetInitialBalance(_selectedId).ToString("0", _id);
+        }
+
+        private decimal GetInitialBalance(int walletId)
+        {
+            try
+            {
+                using (var conn = Db.GetConnection())
+                {
+                    conn.Open();
+
+                    using (var cmd = new MySqlCommand(
+                        "SELECT initial_balance FROM wallets WHERE id = @id AND user_id = @uid", conn))
+                    {
+                        cmd.Parameters.AddWithValue("@id", walletId);
+                        cmd.Parameters.AddWithValue("@uid", Session.UserId);
+
+                        object result = cmd.ExecuteScalar();
+                        return result == null ? 0 : Convert.ToDecimal(result);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Gagal membaca saldo: " + ex.Message, "Error",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return 0;
+            }
         }
 
         private void btnAdd_Click(object sender, EventArgs e)
@@ -169,9 +204,32 @@ namespace DailyFinanceApp.Pages
             decimal balance;
             if (!ValidateInput(out balance)) return;
 
-            // TODO: ganti dengan WalletService.Add(...) dari backend
-            AddWalletToList(txtWalletName.Text.Trim(), cmbType.Text, balance);
-            RefreshGrid();
+            try
+            {
+                using (var conn = Db.GetConnection())
+                {
+                    conn.Open();
+
+                    using (var cmd = new MySqlCommand(
+                        "INSERT INTO wallets (user_id, name, type, initial_balance) " +
+                        "VALUES (@uid, @name, @type, @balance)", conn))
+                    {
+                        cmd.Parameters.AddWithValue("@uid", Session.UserId);
+                        cmd.Parameters.AddWithValue("@name", txtWalletName.Text.Trim());
+                        cmd.Parameters.AddWithValue("@type", cmbType.Text);
+                        cmd.Parameters.AddWithValue("@balance", balance);
+                        cmd.ExecuteNonQuery();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Gagal menambah dompet: " + ex.Message, "Error",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            LoadWallets();
             ClearForm();
 
             MessageBox.Show("Dompet berhasil ditambahkan.", "Sukses",
@@ -189,16 +247,33 @@ namespace DailyFinanceApp.Pages
             decimal balance;
             if (!ValidateInput(out balance)) return;
 
-            // TODO: ganti dengan WalletService.Update(...) dari backend
-            var w = _wallets.Find(x => x.Id == _selectedId);
-            if (w == null) return;
+            try
+            {
+                using (var conn = Db.GetConnection())
+                {
+                    conn.Open();
 
-            w.CurrentBalance += balance - w.InitialBalance;
-            w.InitialBalance = balance;
-            w.Name = txtWalletName.Text.Trim();
-            w.Type = cmbType.Text;
+                    using (var cmd = new MySqlCommand(
+                        "UPDATE wallets SET name = @name, type = @type, initial_balance = @balance " +
+                        "WHERE id = @id AND user_id = @uid", conn))
+                    {
+                        cmd.Parameters.AddWithValue("@name", txtWalletName.Text.Trim());
+                        cmd.Parameters.AddWithValue("@type", cmbType.Text);
+                        cmd.Parameters.AddWithValue("@balance", balance);
+                        cmd.Parameters.AddWithValue("@id", _selectedId);
+                        cmd.Parameters.AddWithValue("@uid", Session.UserId);
+                        cmd.ExecuteNonQuery();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Gagal mengubah dompet: " + ex.Message, "Error",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
 
-            RefreshGrid();
+            LoadWallets();
             ClearForm();
 
             MessageBox.Show("Dompet berhasil diubah.", "Sukses",
@@ -217,9 +292,33 @@ namespace DailyFinanceApp.Pages
                 MessageBoxButtons.YesNo, MessageBoxIcon.Question);
             if (hasil != DialogResult.Yes) return;
 
-            // TODO: ganti dengan WalletService.Delete(...) dari backend
-            _wallets.RemoveAll(x => x.Id == _selectedId);
-            RefreshGrid();
+            try
+            {
+                using (var conn = Db.GetConnection())
+                {
+                    conn.Open();
+
+                    using (var cmd = new MySqlCommand(
+                        "DELETE FROM wallets WHERE id = @id AND user_id = @uid", conn))
+                    {
+                        cmd.Parameters.AddWithValue("@id", _selectedId);
+                        cmd.Parameters.AddWithValue("@uid", Session.UserId);
+                        cmd.ExecuteNonQuery();
+                    }
+                }
+            }
+            catch (MySqlException ex)
+            {
+                // 1451 = dompet masih dipakai oleh transaksi
+                if (ex.Number == 1451)
+                    Warn("Dompet ini masih dipakai transaksi, jadi tidak bisa dihapus.");
+                else
+                    MessageBox.Show("Gagal menghapus dompet: " + ex.Message, "Error",
+                        MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            LoadWallets();
             ClearForm();
         }
 

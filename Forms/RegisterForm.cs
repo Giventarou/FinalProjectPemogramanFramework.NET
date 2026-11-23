@@ -6,6 +6,18 @@ namespace DailyFinanceApp.Forms
 {
     public partial class RegisterForm : Form
     {
+        // Kategori bawaan untuk akun baru: { nama, tipe }
+        private static readonly string[,] DefaultCategories =
+        {
+            { "Makanan", "Pengeluaran" },
+            { "Transportasi", "Pengeluaran" },
+            { "Pendidikan", "Pengeluaran" },
+            { "Lainnya", "Pengeluaran" },
+            { "Gaji", "Pemasukan" },
+            { "Uang Saku", "Pemasukan" },
+            { "Lainnya", "Pemasukan" }
+        };
+
         public RegisterForm()
         {
             InitializeComponent();
@@ -52,15 +64,45 @@ namespace DailyFinanceApp.Forms
                         }
                     }
 
-                    // Simpan akun baru (role otomatis "User")
-                    using (var cmd = new MySqlCommand(
-                        "INSERT INTO users (name, username, password_hash) " +
-                        "VALUES (@name, @username, @hash)", conn))
+                    // Akun, kategori bawaan, dan dompet bawaan disimpan sekaligus.
+                    // Kalau salah satu gagal, semuanya dibatalkan.
+                    using (var tx = conn.BeginTransaction())
                     {
-                        cmd.Parameters.AddWithValue("@name", txtName.Text.Trim());
-                        cmd.Parameters.AddWithValue("@username", txtUsername.Text.Trim());
-                        cmd.Parameters.AddWithValue("@hash", PasswordHelper.Hash(txtPassword.Text));
-                        cmd.ExecuteNonQuery();
+                        int userId;
+
+                        using (var cmd = new MySqlCommand(
+                            "INSERT INTO users (name, username, password_hash) " +
+                            "VALUES (@name, @username, @hash)", conn, tx))
+                        {
+                            cmd.Parameters.AddWithValue("@name", txtName.Text.Trim());
+                            cmd.Parameters.AddWithValue("@username", txtUsername.Text.Trim());
+                            cmd.Parameters.AddWithValue("@hash", PasswordHelper.Hash(txtPassword.Text));
+                            cmd.ExecuteNonQuery();
+                            userId = (int)cmd.LastInsertedId;
+                        }
+
+                        for (int i = 0; i < DefaultCategories.GetLength(0); i++)
+                        {
+                            using (var cmd = new MySqlCommand(
+                                "INSERT INTO categories (user_id, name, type) " +
+                                "VALUES (@uid, @name, @type)", conn, tx))
+                            {
+                                cmd.Parameters.AddWithValue("@uid", userId);
+                                cmd.Parameters.AddWithValue("@name", DefaultCategories[i, 0]);
+                                cmd.Parameters.AddWithValue("@type", DefaultCategories[i, 1]);
+                                cmd.ExecuteNonQuery();
+                            }
+                        }
+
+                        using (var cmd = new MySqlCommand(
+                            "INSERT INTO wallets (user_id, name, type, initial_balance) " +
+                            "VALUES (@uid, 'Dompet Harian', 'Cash', 0)", conn, tx))
+                        {
+                            cmd.Parameters.AddWithValue("@uid", userId);
+                            cmd.ExecuteNonQuery();
+                        }
+
+                        tx.Commit();
                     }
                 }
 

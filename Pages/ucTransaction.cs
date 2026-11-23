@@ -1,7 +1,7 @@
-﻿using System;
+﻿using MySql.Data.MySqlClient;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.Linq;
 using System.Windows.Forms;
 using DailyFinanceApp.Forms;
 
@@ -9,7 +9,6 @@ namespace DailyFinanceApp.Pages
 {
     public partial class ucTransaction : UserControl
     {
-        // Model data dummy. Nanti diganti model/service dari backend.
         private class TransactionItem
         {
             public int Id { get; set; }
@@ -21,18 +20,16 @@ namespace DailyFinanceApp.Pages
             public string Note { get; set; }
         }
 
-        private readonly List<TransactionItem> _transactions = new List<TransactionItem>();
         private readonly List<frmTransactionEdit.Option> _wallets = new List<frmTransactionEdit.Option>();
         private readonly List<frmTransactionEdit.Option> _categories = new List<frmTransactionEdit.Option>();
         private readonly CultureInfo _id = new CultureInfo("id-ID");
-        private int _nextId = 1;
 
         public ucTransaction()
         {
             InitializeComponent();
 
             SetupGrid();
-            LoadDummyData();
+            LoadLookups();
             SetupFilter();
             ApplyFilter();
 
@@ -60,38 +57,59 @@ namespace DailyFinanceApp.Pages
                 DataGridViewContentAlignment.MiddleRight;
         }
 
-        private void LoadDummyData()
+        // Ambil daftar dompet dan kategori milik user dari database
+        private void LoadLookups()
         {
-            _wallets.Add(new frmTransactionEdit.Option { Id = 1, Name = "Dompet Harian" });
-            _wallets.Add(new frmTransactionEdit.Option { Id = 2, Name = "BCA" });
-            _wallets.Add(new frmTransactionEdit.Option { Id = 3, Name = "GoPay" });
+            _wallets.Clear();
+            _categories.Clear();
 
-            _categories.Add(new frmTransactionEdit.Option { Id = 1, Name = "Makanan", Type = "Pengeluaran" });
-            _categories.Add(new frmTransactionEdit.Option { Id = 2, Name = "Transportasi", Type = "Pengeluaran" });
-            _categories.Add(new frmTransactionEdit.Option { Id = 3, Name = "Pendidikan", Type = "Pengeluaran" });
-            _categories.Add(new frmTransactionEdit.Option { Id = 4, Name = "Gaji", Type = "Pemasukan" });
-            _categories.Add(new frmTransactionEdit.Option { Id = 5, Name = "Uang Saku", Type = "Pemasukan" });
-
-            DateTime today = DateTime.Today;
-            Add(today, "Pengeluaran", 1, 1, 25000, "Makan siang");
-            Add(today.AddDays(-1), "Pengeluaran", 3, 2, 12000, "Ojek online");
-            Add(today.AddDays(-2), "Pemasukan", 2, 5, 500000, "Uang saku mingguan");
-            Add(today.AddDays(-5), "Pemasukan", 2, 4, 3000000, "Gaji part-time");
-        }
-
-        private void Add(DateTime date, string type, int walletId, int categoryId,
-                         decimal amount, string note)
-        {
-            _transactions.Add(new TransactionItem
+            try
             {
-                Id = _nextId++,
-                Date = date,
-                Type = type,
-                WalletId = walletId,
-                CategoryId = categoryId,
-                Amount = amount,
-                Note = note
-            });
+                using (var conn = Db.GetConnection())
+                {
+                    conn.Open();
+
+                    using (var cmd = new MySqlCommand(
+                        "SELECT id, name FROM wallets WHERE user_id = @uid ORDER BY name", conn))
+                    {
+                        cmd.Parameters.AddWithValue("@uid", Session.UserId);
+                        using (var reader = cmd.ExecuteReader())
+                        {
+                            while (reader.Read())
+                            {
+                                _wallets.Add(new frmTransactionEdit.Option
+                                {
+                                    Id = Convert.ToInt32(reader["id"]),
+                                    Name = reader["name"].ToString()
+                                });
+                            }
+                        }
+                    }
+
+                    using (var cmd = new MySqlCommand(
+                        "SELECT id, name, type FROM categories WHERE user_id = @uid ORDER BY name", conn))
+                    {
+                        cmd.Parameters.AddWithValue("@uid", Session.UserId);
+                        using (var reader = cmd.ExecuteReader())
+                        {
+                            while (reader.Read())
+                            {
+                                _categories.Add(new frmTransactionEdit.Option
+                                {
+                                    Id = Convert.ToInt32(reader["id"]),
+                                    Name = reader["name"].ToString(),
+                                    Type = reader["type"].ToString()
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Gagal memuat dompet dan kategori: " + ex.Message, "Error",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
         private void SetupFilter()
@@ -128,58 +146,81 @@ namespace DailyFinanceApp.Pages
             dtpTo.Value = DateTime.Today;
         }
 
-        // Menampilkan transaksi sesuai filter
+        // Menampilkan transaksi sesuai filter (disaring langsung oleh database)
         private void ApplyFilter()
         {
-            string keyword = txtSearch.Text.Trim().ToLower();
+            string keyword = txtSearch.Text.Trim();
             DateTime from = dtpFrom.Value.Date;
             DateTime to = dtpTo.Value.Date;
             int catId = ((frmTransactionEdit.Option)cmbCategory.SelectedItem).Id;
             int walId = ((frmTransactionEdit.Option)cmbWallet.SelectedItem).Id;
             string type = cmbType.Text;
 
-            var data = _transactions
-                .Where(t => t.Date.Date >= from && t.Date.Date <= to)
-                .Where(t => catId == 0 || t.CategoryId == catId)
-                .Where(t => walId == 0 || t.WalletId == walId)
-                .Where(t => type == "Semua" || t.Type == type)
-                .Where(t => keyword == "" ||
-                            (t.Note ?? "").ToLower().Contains(keyword) ||
-                            NameOfCategory(t.CategoryId).ToLower().Contains(keyword))
-                .OrderByDescending(t => t.Date)
-                .ThenByDescending(t => t.Id);
-
             dgvTransaction.Rows.Clear();
-            foreach (var t in data)
+
+            try
             {
-                int row = dgvTransaction.Rows.Add(
-                    t.Id,
-                    t.Date.ToString("dd/MM/yyyy"),
-                    t.Type,
-                    NameOfWallet(t.WalletId),
-                    NameOfCategory(t.CategoryId),
-                    Rp(t.Amount),
-                    t.Note);
+                using (var conn = Db.GetConnection())
+                {
+                    conn.Open();
 
-                // Hijau untuk pemasukan, merah untuk pengeluaran
-                dgvTransaction.Rows[row].Cells["Amount"].Style.ForeColor =
-                    t.Type == "Pemasukan"
-                        ? System.Drawing.Color.FromArgb(39, 174, 96)
-                        : System.Drawing.Color.FromArgb(192, 57, 43);
+                    string sql =
+                        "SELECT t.id, t.trx_date, t.type, w.name AS wallet_name, " +
+                        "       c.name AS category_name, t.amount, t.note " +
+                        "FROM transactions t " +
+                        "JOIN wallets w ON w.id = t.wallet_id " +
+                        "JOIN categories c ON c.id = t.category_id " +
+                        "WHERE t.user_id = @uid " +
+                        "  AND t.trx_date BETWEEN @from AND @to " +
+                        "  AND (@cat = 0 OR t.category_id = @cat) " +
+                        "  AND (@wal = 0 OR t.wallet_id = @wal) " +
+                        "  AND (@type = 'Semua' OR t.type = @type) " +
+                        "  AND (@kw = '' OR t.note LIKE @like OR c.name LIKE @like) " +
+                        "ORDER BY t.trx_date DESC, t.id DESC";
+
+                    using (var cmd = new MySqlCommand(sql, conn))
+                    {
+                        cmd.Parameters.AddWithValue("@uid", Session.UserId);
+                        cmd.Parameters.AddWithValue("@from", from);
+                        cmd.Parameters.AddWithValue("@to", to);
+                        cmd.Parameters.AddWithValue("@cat", catId);
+                        cmd.Parameters.AddWithValue("@wal", walId);
+                        cmd.Parameters.AddWithValue("@type", type);
+                        cmd.Parameters.AddWithValue("@kw", keyword);
+                        cmd.Parameters.AddWithValue("@like", "%" + keyword + "%");
+
+                        using (var reader = cmd.ExecuteReader())
+                        {
+                            while (reader.Read())
+                            {
+                                string trxType = reader["type"].ToString();
+
+                                int row = dgvTransaction.Rows.Add(
+                                    reader["id"],
+                                    Convert.ToDateTime(reader["trx_date"]).ToString("dd/MM/yyyy"),
+                                    trxType,
+                                    reader["wallet_name"].ToString(),
+                                    reader["category_name"].ToString(),
+                                    Rp(Convert.ToDecimal(reader["amount"])),
+                                    reader["note"].ToString());
+
+                                // Hijau untuk pemasukan, merah untuk pengeluaran
+                                dgvTransaction.Rows[row].Cells["Amount"].Style.ForeColor =
+                                    trxType == "Pemasukan"
+                                        ? System.Drawing.Color.FromArgb(39, 174, 96)
+                                        : System.Drawing.Color.FromArgb(192, 57, 43);
+                            }
+                        }
+                    }
+                }
             }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Gagal memuat transaksi: " + ex.Message, "Error",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+
             dgvTransaction.ClearSelection();
-        }
-
-        private string NameOfWallet(int id)
-        {
-            var w = _wallets.FirstOrDefault(x => x.Id == id);
-            return w == null ? "-" : w.Name;
-        }
-
-        private string NameOfCategory(int id)
-        {
-            var c = _categories.FirstOrDefault(x => x.Id == id);
-            return c == null ? "-" : c.Name;
         }
 
         private int SelectedId()
@@ -188,18 +229,158 @@ namespace DailyFinanceApp.Pages
             return Convert.ToInt32(dgvTransaction.SelectedRows[0].Cells["Id"].Value);
         }
 
+        // ---------- Akses database ----------
+
+        private string NameOf(List<frmTransactionEdit.Option> list, int id)
+        {
+            var o = list.Find(x => x.Id == id);
+            return o == null ? "-" : o.Name;
+        }
+
+        // Teks ringkas satu transaksi, untuk disimpan di transaction_logs
+        private string Describe(TransactionItem t)
+        {
+            return t.Type + " | " + NameOf(_wallets, t.WalletId) + " | " +
+                   NameOf(_categories, t.CategoryId) + " | " +
+                   t.Date.ToString("yyyy-MM-dd") + " | Rp " +
+                   t.Amount.ToString("N0", _id) + " | " + t.Note;
+        }
+
+        // Saldo dompet = saldo awal + pemasukan - pengeluaran.
+        // excludeId dipakai saat mengubah transaksi, supaya transaksi itu tidak dihitung dua kali.
+        private decimal GetBalance(MySqlConnection conn, MySqlTransaction tx, int walletId, int excludeId)
+        {
+            string sql =
+                "SELECT w.initial_balance + COALESCE(SUM(CASE " +
+                "  WHEN t.type = 'Pemasukan' THEN t.amount " +
+                "  WHEN t.type = 'Pengeluaran' THEN -t.amount END), 0) " +
+                "FROM wallets w " +
+                "LEFT JOIN transactions t ON t.wallet_id = w.id AND t.id <> @ex " +
+                "WHERE w.id = @wid AND w.user_id = @uid " +
+                "GROUP BY w.id, w.initial_balance";
+
+            using (var cmd = new MySqlCommand(sql, conn, tx))
+            {
+                cmd.Parameters.AddWithValue("@ex", excludeId);
+                cmd.Parameters.AddWithValue("@wid", walletId);
+                cmd.Parameters.AddWithValue("@uid", Session.UserId);
+                object result = cmd.ExecuteScalar();
+                return result == null ? 0 : Convert.ToDecimal(result);
+            }
+        }
+
+        private TransactionItem GetTransaction(MySqlConnection conn, MySqlTransaction tx, int id)
+        {
+            using (var cmd = new MySqlCommand(
+                "SELECT id, trx_date, type, wallet_id, category_id, amount, note " +
+                "FROM transactions WHERE id = @id AND user_id = @uid", conn, tx))
+            {
+                cmd.Parameters.AddWithValue("@id", id);
+                cmd.Parameters.AddWithValue("@uid", Session.UserId);
+
+                using (var reader = cmd.ExecuteReader())
+                {
+                    if (!reader.Read()) return null;
+
+                    return new TransactionItem
+                    {
+                        Id = Convert.ToInt32(reader["id"]),
+                        Date = Convert.ToDateTime(reader["trx_date"]),
+                        Type = reader["type"].ToString(),
+                        WalletId = Convert.ToInt32(reader["wallet_id"]),
+                        CategoryId = Convert.ToInt32(reader["category_id"]),
+                        Amount = Convert.ToDecimal(reader["amount"]),
+                        Note = reader["note"].ToString()
+                    };
+                }
+            }
+        }
+
+        private void SaveLog(MySqlConnection conn, MySqlTransaction tx, string action,
+                             int trxId, string oldValue, string newValue)
+        {
+            using (var cmd = new MySqlCommand(
+                "INSERT INTO transaction_logs (user_id, transaction_id, action, old_value, new_value) " +
+                "VALUES (@uid, @trx, @action, @old, @new)", conn, tx))
+            {
+                cmd.Parameters.AddWithValue("@uid", Session.UserId);
+                cmd.Parameters.AddWithValue("@trx", trxId);
+                cmd.Parameters.AddWithValue("@action", action);
+                cmd.Parameters.AddWithValue("@old", (object)oldValue ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@new", (object)newValue ?? DBNull.Value);
+                cmd.ExecuteNonQuery();
+            }
+        }
+
         // ---------- Event ----------
 
         private void btnAdd_Click(object sender, EventArgs e)
         {
+            if (_wallets.Count == 0 || _categories.Count == 0)
+            {
+                Warn("Buat minimal satu dompet dan satu kategori dulu sebelum menambah transaksi.");
+                return;
+            }
+
+            TransactionItem item;
+
             using (var dlg = new frmTransactionEdit(_wallets, _categories))
             {
                 if (dlg.ShowDialog() != DialogResult.OK) return;
 
-                // TODO: ganti dengan TransactionService.Add(...) dari backend
-                // Backend juga yang menolak pengeluaran bila saldo dompet tidak cukup
-                // dan mencatat ke transaction_logs.
-                Add(dlg.Date, dlg.TypeName, dlg.WalletId, dlg.CategoryId, dlg.Amount, dlg.Note);
+                item = new TransactionItem
+                {
+                    Date = dlg.Date,
+                    Type = dlg.TypeName,
+                    WalletId = dlg.WalletId,
+                    CategoryId = dlg.CategoryId,
+                    Amount = dlg.Amount,
+                    Note = dlg.Note
+                };
+            }
+
+            try
+            {
+                using (var conn = Db.GetConnection())
+                {
+                    conn.Open();
+
+                    using (var tx = conn.BeginTransaction())
+                    {
+                        // Tolak pengeluaran kalau saldo dompet tidak cukup
+                        if (item.Type == "Pengeluaran" &&
+                            item.Amount > GetBalance(conn, tx, item.WalletId, 0))
+                        {
+                            Warn("Saldo dompet tidak cukup untuk pengeluaran ini.");
+                            return;
+                        }
+
+                        int newId;
+                        using (var cmd = new MySqlCommand(
+                            "INSERT INTO transactions (user_id, wallet_id, category_id, type, amount, note, trx_date) " +
+                            "VALUES (@uid, @wid, @cid, @type, @amount, @note, @date)", conn, tx))
+                        {
+                            cmd.Parameters.AddWithValue("@uid", Session.UserId);
+                            cmd.Parameters.AddWithValue("@wid", item.WalletId);
+                            cmd.Parameters.AddWithValue("@cid", item.CategoryId);
+                            cmd.Parameters.AddWithValue("@type", item.Type);
+                            cmd.Parameters.AddWithValue("@amount", item.Amount);
+                            cmd.Parameters.AddWithValue("@note", item.Note);
+                            cmd.Parameters.AddWithValue("@date", item.Date);
+                            cmd.ExecuteNonQuery();
+                            newId = (int)cmd.LastInsertedId;
+                        }
+
+                        SaveLog(conn, tx, "Tambah", newId, null, Describe(item));
+                        tx.Commit();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Gagal menambah transaksi: " + ex.Message, "Error",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
             }
 
             ResetFilterValues();
@@ -217,21 +398,89 @@ namespace DailyFinanceApp.Pages
                 return;
             }
 
-            var t = _transactions.First(x => x.Id == id);
+            TransactionItem old;
+            try
+            {
+                using (var conn = Db.GetConnection())
+                {
+                    conn.Open();
+                    old = GetTransaction(conn, null, id);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Gagal membaca transaksi: " + ex.Message, "Error",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            if (old == null)
+            {
+                Warn("Transaksi tidak ditemukan.");
+                return;
+            }
+
+            TransactionItem baru;
 
             using (var dlg = new frmTransactionEdit(_wallets, _categories))
             {
-                dlg.LoadData(t.Type, t.WalletId, t.CategoryId, t.Date, t.Amount, t.Note);
+                dlg.LoadData(old.Type, old.WalletId, old.CategoryId, old.Date, old.Amount, old.Note);
                 if (dlg.ShowDialog() != DialogResult.OK) return;
 
-                // TODO: ganti dengan TransactionService.Update(...) dari backend
-                // (backend menyesuaikan saldo dompet dan mencatat nilai lama/baru ke log)
-                t.Type = dlg.TypeName;
-                t.WalletId = dlg.WalletId;
-                t.CategoryId = dlg.CategoryId;
-                t.Date = dlg.Date;
-                t.Amount = dlg.Amount;
-                t.Note = dlg.Note;
+                baru = new TransactionItem
+                {
+                    Id = id,
+                    Date = dlg.Date,
+                    Type = dlg.TypeName,
+                    WalletId = dlg.WalletId,
+                    CategoryId = dlg.CategoryId,
+                    Amount = dlg.Amount,
+                    Note = dlg.Note
+                };
+            }
+
+            try
+            {
+                using (var conn = Db.GetConnection())
+                {
+                    conn.Open();
+
+                    using (var tx = conn.BeginTransaction())
+                    {
+                        // Saldo dihitung tanpa transaksi ini, lalu dicek dengan nilai barunya
+                        if (baru.Type == "Pengeluaran" &&
+                            baru.Amount > GetBalance(conn, tx, baru.WalletId, id))
+                        {
+                            Warn("Saldo dompet tidak cukup untuk pengeluaran ini.");
+                            return;
+                        }
+
+                        using (var cmd = new MySqlCommand(
+                            "UPDATE transactions SET wallet_id = @wid, category_id = @cid, type = @type, " +
+                            "amount = @amount, note = @note, trx_date = @date " +
+                            "WHERE id = @id AND user_id = @uid", conn, tx))
+                        {
+                            cmd.Parameters.AddWithValue("@wid", baru.WalletId);
+                            cmd.Parameters.AddWithValue("@cid", baru.CategoryId);
+                            cmd.Parameters.AddWithValue("@type", baru.Type);
+                            cmd.Parameters.AddWithValue("@amount", baru.Amount);
+                            cmd.Parameters.AddWithValue("@note", baru.Note);
+                            cmd.Parameters.AddWithValue("@date", baru.Date);
+                            cmd.Parameters.AddWithValue("@id", id);
+                            cmd.Parameters.AddWithValue("@uid", Session.UserId);
+                            cmd.ExecuteNonQuery();
+                        }
+
+                        SaveLog(conn, tx, "Ubah", id, Describe(old), Describe(baru));
+                        tx.Commit();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Gagal mengubah transaksi: " + ex.Message, "Error",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
             }
 
             ResetFilterValues();
@@ -253,9 +502,40 @@ namespace DailyFinanceApp.Pages
                 MessageBoxButtons.YesNo, MessageBoxIcon.Question);
             if (hasil != DialogResult.Yes) return;
 
-            // TODO: ganti dengan TransactionService.Delete(...) dari backend
-            // (backend mengembalikan saldo dompet dan mencatat penghapusan ke log)
-            _transactions.RemoveAll(x => x.Id == id);
+            try
+            {
+                using (var conn = Db.GetConnection())
+                {
+                    conn.Open();
+
+                    using (var tx = conn.BeginTransaction())
+                    {
+                        var old = GetTransaction(conn, tx, id);
+                        if (old == null)
+                        {
+                            Warn("Transaksi tidak ditemukan.");
+                            return;
+                        }
+
+                        using (var cmd = new MySqlCommand(
+                            "DELETE FROM transactions WHERE id = @id AND user_id = @uid", conn, tx))
+                        {
+                            cmd.Parameters.AddWithValue("@id", id);
+                            cmd.Parameters.AddWithValue("@uid", Session.UserId);
+                            cmd.ExecuteNonQuery();
+                        }
+
+                        SaveLog(conn, tx, "Hapus", id, Describe(old), null);
+                        tx.Commit();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Gagal menghapus transaksi: " + ex.Message, "Error",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
 
             ResetFilterValues();
             ApplyFilter();
