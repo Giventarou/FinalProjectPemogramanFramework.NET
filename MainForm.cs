@@ -15,6 +15,7 @@ namespace DailyFinanceApp
             btnCategory.Click += (s, e) => LoadPage(new ucCategory());
             btnTransaction.Click += (s, e) => LoadPage(new ucTransaction());
             btnBudget.Click += (s, e) => LoadPage(new ucBudget());
+            btnLog.Click += (s, e) => LoadPage(new ucLog());
 
             LoadPage(new ucDashboard());
         }
