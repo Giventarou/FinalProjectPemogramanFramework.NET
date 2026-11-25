@@ -144,6 +144,12 @@
     <Compile Include="Pages\ucLog.Designer.cs">
       <DependentUpon>ucLog.cs</DependentUpon>
     </Compile>
+    <Compile Include="Pages\ucReport.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Include="Pages\ucReport.Designer.cs">
+      <DependentUpon>ucReport.cs</DependentUpon>
+    </Compile>
     <Compile Include="Pages\ucTransaction.cs">
       <SubType>UserControl</SubType>
     </Compile>
@@ -181,6 +187,9 @@
     </EmbeddedResource>
     <EmbeddedResource Include="Pages\ucLog.resx">
       <DependentUpon>ucLog.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Pages\ucReport.resx">
+      <DependentUpon>ucReport.cs</DependentUpon>
     </EmbeddedResource>
     <EmbeddedResource Include="Pages\ucTransaction.resx">
       <DependentUpon>ucTransaction.cs</DependentUpon>
